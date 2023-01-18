@@ -72,9 +72,14 @@ site_species_orig = as.matrix(grid_occ_overlap_filled) * 1
 # sub-setting to species which appear in at least one grid
 site_species_orig = site_species_orig[,as.logical(colSums(site_species_orig))]
 
-# saveing site_species_orig and reading it again
-saveRDS(site_species_orig, file = file.path(data.dir,'site_species_orig.rds'))
+# saving site_species_orig and reading it again
+# saveRDS(site_species_orig, file = file.path(data.dir,'site_species_orig.rds'))
 site_species_orig = read_rds(file.path(data.dir,'site_species_orig.rds'))
+
+# saving all_traits and reading it again
+all_traits = values(frug_birds_overlap)
+# saveRDS(all_traits, file = file.path(data.dir,'all_traits.rds'))
+all_traits = read_rds(file.path(data.dir,'all_traits.rds'))
   
 ## Simulating defaunation ======================================================
 
@@ -116,18 +121,17 @@ defaunate = function(occ, bird_data, threat1, threat2 = NULL){
 }
 
 # simulate habitat loss and wildlife trade
-site_species_HL = defaunate(occ = site_species_orig, bird_data = values(frug_birds_overlap), 
+site_species_HL = defaunate(occ = site_species_orig, bird_data = all_traits, 
                             threat1 = "HL")
-site_species_WT = defaunate(occ = site_species_orig, bird_data = values(frug_birds_overlap), 
+site_species_WT = defaunate(occ = site_species_orig, bird_data = all_traits, 
                             threat1 = "WT")
-site_species_HL_WT = defaunate(occ = site_species_orig, bird_data = values(frug_birds_overlap), 
+site_species_HL_WT = defaunate(occ = site_species_orig, bird_data = all_traits, 
                             threat1 = "HL",  threat2 = "WT")
 
 
 ## FD Analysis =================================================================
 
 # obtaining species x traits matrix
-all_traits = values(frug_birds_overlap)
 rownames(all_traits) = all_traits$sci_name
 all_traits$Beak.Lengt = as.numeric(all_traits$Beak.Lengt) # length of culmen
 all_traits$Mass = as.numeric(all_traits$Mass)
@@ -158,78 +162,11 @@ res_HL_WT = funcdiv(x = fd_traits_orig, a = site_species_HL_WT)
 
 
 ## Null models =================================================================
-# # original assemblage
-# null_orig = list()
-# for(i in 1:100){
-#   null_orig[[i]] = randomizeMatrix(site_species_orig,null.model = "trialswap",
-#                                    iterations = 1000000)
-# }
-# 
-# null_res_orig = lapply(null_orig, FUN = funcdiv, x = fd_traits_orig, original = TRUE)
-# 
-# null_res_orig_fdis = lapply(null_res_orig, FUN = function(x) {x$FDis})
-# 
-# null_res_orig_fdis_mat = do.call("rbind",null_res_orig_fdis)
-# 
-# z_scores_orig = (res_orig$FDis - colMeans(null_res_orig_fdis_mat)) / apply(null_res_orig_fdis_mat, MARGIN = 2, FUN = sd)
 
-# # habitat loss defaunation assemblage
-# null_HL = list()
-# for(i in 1:100){
-#   null_HL[[i]] = randomizeMatrix(site_species_HL,null.model = "trialswap",
-#                                    iterations = 1000000)
-# }
-# 
-# null_res_HL = lapply(null_HL, FUN = funcdiv, x = fd_traits_orig)
-# 
-# null_res_HL_fdis = lapply(null_res_HL, FUN = function(x) {x$FDis})
-# 
-# null_res_HL_fdis_mat = do.call("rbind",null_res_HL_fdis)
-# 
-# z_scores_HL = (res_HL$FDis - colMeans(null_res_HL_fdis_mat)) / apply(null_res_HL_fdis_mat, MARGIN = 2, FUN = sd)
-# 
-# # wildlife trade defaunation assemblage
-# null_WT = list()
-# for(i in 1:100){
-#   null_WT[[i]] = randomizeMatrix(site_species_WT,null.model = "trialswap",
-#                                    iterations = 1000000)
-# }
-# 
-# null_res_WT = lapply(null_WT, FUN = funcdiv, x = fd_traits_orig)
-# 
-# null_res_WT_fdis = lapply(null_res_WT, FUN = function(x) {x$FDis})
-# 
-# null_res_WT_fdis_mat = do.call("rbind",null_res_WT_fdis)
-# 
-# z_scores_WT = (res_WT$FDis - colMeans(null_res_WT_fdis_mat)) / apply(null_res_WT_fdis_mat, MARGIN = 2, FUN = sd)
-# 
-# 
-# # habitat loss + wildlife trade defaunation assemblage
-# null_HL_WT = list()
-# for(i in 1:100){
-#   null_HL_WT[[i]] = randomizeMatrix(site_species_HL_WT,null.model = "trialswap",
-#                                  iterations = 1000000)
-# }
-
-# change 100 to 999
-# richness null model
-# mclapply --> run things faster by parallelization
-
-# null_res_HL_WT = lapply(null_HL_WT, FUN = funcdiv, x = fd_traits_orig)
-# 
-# null_res_HL_WT_fdis = lapply(null_res_HL_WT, FUN = function(x) {x$FDis})
-# 
-# null_res_HL_WT_fdis_mat = do.call("rbind",null_res_HL_WT_fdis)
-# 
-# z_scores_HL_WT = (res_HL_WT$FDis - colMeans(null_res_HL_WT_fdis_mat)) / apply(null_res_HL_WT_fdis_mat, MARGIN = 2, FUN = sd)
-
-# hist(z_scores_orig[1:50])
-# hist(z_scores_orig[51:100])
-
-
-# loading fdFunc script for null_mod function
+# loading nullModel script for null_mod function
 source(file.path(main.dir,"src/nullModel.R"))
 
+# do not run this!
 system.time({
   null_res_HL = null_mod(site_species_orig,site_species_HL,res_orig,res_HL)
 })
@@ -242,7 +179,7 @@ null_res_HL_WT = null_mod(site_species_orig,site_species_HL_WT,res_orig,res_HL_W
 
 
 
-
+# in progress
 z_scores = cbind(z_scores_orig, z_scores_HL, z_scores_WT, z_scores_HL_WT)
 colnames(z_scores) = c("z_orig", "z_HL", "z_WT", "z_HL_WT")
 f_disp = cbind(res_orig$FDis, res_HL$FDis, res_WT$FDis, res_HL_WT$FDis, 
@@ -257,8 +194,6 @@ f_disp_z = as.data.frame(cbind(f_disp, z_scores))
 any(values(world_grid_vect_filled)$grid_id != as.numeric(rownames(f_disp_z)))
 values(world_grid_vect_filled) = cbind(values(world_grid_vect_filled), f_disp_z)
 values(world_grid_vect_filled)$fortify_id = rownames(values(world_grid_vect_filled))
-
-# save.image(file = file.path(data.dir, "fd.RData"))
 
 
 
