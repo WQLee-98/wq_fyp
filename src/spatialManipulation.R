@@ -22,9 +22,8 @@ set.seed(500)
 ## Creating original site x species matrix======================================
 
 # read in tdwg level 3 shapefile
-# tdwg_l3 = vect(file.path(raw.dir, "SpatialData/TDWG/level3/level3.shp"))
-# saveRDS(tdwg_l3, file = file.path(data.dir,'tdwg_l3.rds'))
-tdwg_l3 = vect(read_rds(file.path(data.dir,'tdwg_l3.rds')))
+tdwg_l3 = vect(file.path(raw.dir, "SpatialData/TDWG/level3/level3.shp"))
+
 
 # frug_birds is already filtered from BOTW.gdb for birds that are frugivorous, 
 # presence, origin, and seasonality are all 1,2,3, and all spatial features with
@@ -73,9 +72,9 @@ site_species_orig = as.matrix(grid_occ_overlap_filled) * 1
 # sub-setting to species which appear in at least one grid
 site_species_orig = site_species_orig[,as.logical(colSums(site_species_orig))]
 
-
-# load this
-saveRDS(site_species_orig, file = file.path(data.dir,"site_species_orig.rds"))
+# saveing site_species_orig and reading it again
+saveRDS(site_species_orig, file = file.path(data.dir,'site_species_orig.rds'))
+site_species_orig = read_rds(file.path(data.dir,'site_species_orig.rds'))
   
 ## Simulating defaunation ======================================================
 
