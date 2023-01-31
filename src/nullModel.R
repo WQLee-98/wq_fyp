@@ -1,48 +1,33 @@
-library(utils)
-library(parallel)
-library(foreach)
-library(doParallel)
 
 # Create function that calculates mean fdisp values of null models of each cell
-# and their z-scores
-null_mod = function(orig_mat, defaun_mat, orig_fd, defaun_fd){
+null_mod = function(orig_mat, nb.sp, vectors, eig){
   # arguments
   #   orig_mat: site x species matrix of original assemblage
-  #   defaun_mat: site x species matrix of defaunated assemblage
-  #   orig_fd: results of functional dispersion analysis on original assemblage
-  #   defaun_fd: results of functional dispersion analysis on defaunated assemblage
-  
-  num_sp_def = orig_fd$uniq.sp - defaun_fd$uniq.sp
-  
-  
-  mean_fdisp = rep(NA, nrow(orig_mat)) ; names(mean_fdisp) = row.names(orig_mat)
-  stan_dev = rep(NA, nrow(orig_mat)) ; names(stan_dev) = row.names(orig_mat)
-  z_scores = rep(NA, nrow(orig_mat)) ; names(z_scores) = row.names(orig_mat)
-  orig_fdisp = orig_fd$FDis
-  
-  vectors = orig_fd$vectors
-  pos = orig_fd$eig > 0
+  #   nb.sp: vector storing the number of species present in each cell after a 
+  #     defaunation scenario
+  #   vectors = coordinates of all species on all 4 axis of PCoA
+  #   eig = eigen values of PCoA
 
+  pos = eig > 0
   
-  for (i in 1:length(num_sp_def)){
-    if (num_sp_def[i] != 0){
+  # create list to store randomised fdisp values for each cell
+  nulls = list()
+  
+  for (i in 1:nrow(orig_mat)){
+    if (nb.sp[i] >= 2){
       # identities of species in a cell
       sp = colnames(orig_mat)[as.logical(orig_mat[i,])]
-
-      # combination of species defaunated
-      combin = combn(sp, num_sp_def[i])
       
-      # creating vector to store all functional dispersion values for all null models
-      fdisp = rep(NA,ncol(combin))
+      # creating list of randomised combinations of species in the cell
+      combin = lapply(1:999, FUN = function(x){sample(sp,nb.sp[i])})
       
-      for (j in 1:ncol(combin)){
-        pres = sp
-        pres = pres[!pres %in% combin[,j]]
-        
+      avg.dist = lapply(combin, FUN = function(x, vectors, pos){
+        #calculate centroidd of the species combination
+        pres = x
         vec = vectors[pres,,drop = F]
         centroid = apply(vec, 2, mean)
         
-        # distance of species from community i centroid
+        # calculate fdisp of cell
         dist.pos <- sweep(vec[, pos , drop = F], 2, centroid[pos]) 
         dist.pos <- rowSums(dist.pos^2)
         if (any(!pos) ){
@@ -53,44 +38,26 @@ null_mod = function(orig_mat, defaun_mat, orig_fd, defaun_fd){
         
         # euclidian distance of all species in community i to centroid through Pythagoras' Theorem
         zij <- sqrt(abs(dist.pos - dist.neg))
-        fdisp[j] <- mean(zij)
-      }
-      mean_fdisp[i] = mean(fdisp)
-      stan_dev[i] = sd(fdisp)
+        return (mean(zij))
+      }, vectors = vectors, pos = pos)
+      
+      avg.dist = unlist(avg.dist)
+      nulls[[i]] = avg.dist
+    } 
+    else if (nb.sp[i] == 1){
+      # functional dispersion of a cell with 1 species is 0
+      avg.dist = rep(0, 999)
+      nulls[[i]] = avg.dist
+    } 
+    else {
+      # functional dispersion of a cell with 0 species is NA
+      avg.dist = rep(NA, 999)
+      nulls[[i]] = avg.dist
     }
-    stopCluster(cl)
   }
-  z_scores = (orig_fdisp - mean_fdisp)/stan_dev
+  # replace names of nulls with grid ids
+  names(nulls) = rownames(orig_mat)
   
-  return(list(z_scores = z_scores, mean_fdisp = mean_fdisp))
+  # returns list of all null values of each cell
+  return (nulls)
 }
-
-# num_cores = detectCores()
-# cl = makeCluster(num_cores-1, type = "PSOCK")
-# print(cl)
-# registerDoParallel(cl)
-# getDoParRegistered()
-# getDoParWorkers()
-# 
-# 
-# 
-# system.time(
-#   x <- foreach(
-#     i = 1:10, 
-#     .combine = 'c'
-#   ) %dopar% {
-#     sqrt(i)
-#   })
-# 
-# stopCluster(cl)
-# 
-# 
-# system.time({
-#   x = vector()
-#   for(i in 1:100){
-#     x[i] = sqrt(i)
-#   }
-# })
-
-# clusterExport(cl, list("site_species_orig","site_species_HL","res_orig",
-#                        "res_HL", "null_mod"))

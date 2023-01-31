@@ -123,8 +123,14 @@ funcdiv = function (x, a, original = FALSE){
       avg.dist.cent[i] <- mean(zij)
       dist.cent[[i]] = zij
     }
+    else if (nb.sp == 1){
+      avg.dist.cent[i] = 0
+      sp = c(0)
+      names(sp) = rownames(vec)
+      dist.cent[[i]] = sp
+    }
     else {
-      avg.dist.cent[i] <- 0
+      avg.dist.cent[i] = NA
       dist.cent[[i]] = NA
     }
   }

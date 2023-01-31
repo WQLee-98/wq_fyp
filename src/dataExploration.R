@@ -7,6 +7,7 @@ data.dir = file.path(main.dir,"data")
 results.dir = file.path(main.dir,"results")
 figures.dir = file.path(main.dir,"figures")
 
+library(dplyr)
 
 ## Exploring relationship between threat level of frugivores vs other 
 ## feeding guilds ==============================================================
@@ -42,6 +43,25 @@ barplot(proptab, xlab = "Trophic Niche", legend = rownames(proptab))
 ## of frugivores ===============================================================
 frug_data = readRDS(file.path(data.dir,"frug_masterlist.rds"))
 head(frug_data)
+
+# adding in labels for RL category and threat magnitude scores
+iucn_red_list = data.frame(RL_categ = c("Least Concern", "Near Threatened", "Vulnerable", 
+                                        "Endangered", "Critically Endangered", 
+                                        "Extinct in the Wild", "Data Deficient"),
+                           ExtinctionRisk = c(0, 0, 1, 1, 1, NA, NA))
+HL_score = data.frame(mag = c(0, 2, 3, 4, 5, 6, 7, 8, 9), 
+                      HL_impact = c("Negligible", "Negligible", "Low", "Low", 
+                                    "Low", "Medium", "Medium", "High", "High"))
+WT_score = data.frame(mag = c(0, 2, 3, 4, 5, 6, 7, 8, 9), 
+                      WT_impact = c("Negligible", "Negligible", "Low", "Low", 
+                                    "Low", "Medium", "Medium", "High", "High"))
+
+frug_data = left_join(frug_data, iucn_red_list, by = c("status" = "RL_categ")) %>%
+  left_join(HL_score, by = c("HL" = "mag")) %>%
+  left_join(WT_score, by = c("WT" = "mag"))
+
+
+
 
 frug_data_extant_noDD = subset(frug_data, status != 'Data Deficient' & status 
                                != 'Extinct in the Wild')
