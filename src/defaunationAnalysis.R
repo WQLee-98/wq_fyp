@@ -15,6 +15,7 @@ library(ggplot2)
 library(picante)
 library(broom)
 library(tidyverse)
+library(viridis)
 
 
 set.seed(500)
@@ -24,47 +25,39 @@ set.seed(500)
 # read in tdwg level 3 shapefile
 tdwg_l3 = vect(file.path(raw.dir, "SpatialData/TDWG/level3/level3.shp"))
 
-
+# read in ranges of all frugivorous birds
 # frug_birds is already filtered from BOTW.gdb for birds that are frugivorous, 
 # presence, origin, and seasonality are all 1,2,3, and all spatial features with
 # same species names are dissolved into the same feature
 # all species are extant, with data deficient species included
-frug_birds = vect(file.path(data.dir,"Spatial/Bird Range 2/all_frug_range_dissolved.shp"))
+frug_birds = vect(file.path(data.dir,"Spatial/Bird Range 3/all_frug_range_filtered_dissolved.shp"))
 
-
-# remove species that do not intersect at all with tdwg_l3
-overlap_check = terra::relate(x = frug_birds, y = tdwg_l3, relation = "intersects")
-
-frug_birds_overlap = frug_birds[as.logical(rowSums(overlap_check))]
 
 # create grid cells with 5 degree x 5 degree dimension
 world_grid = st_make_grid(as(as(tdwg_l3, "Spatial"), "sf"),
                           5,
                           crs = st_crs(tdwg_l3),
                           what = "polygons",
-                          square = TRUE) 
-
-# limit grid to the spatial extent of tdwg_l3
+                          square = TRUE)
 world_grid_vect = vect(world_grid)
-world_grid_vect_subset = world_grid_vect[as.logical(rowSums(relate(world_grid_vect, tdwg_l3, relation = "intersects")))]
+
 # create grid id
-world_grid_vect_subset$grid_id = seq(1,nrow(world_grid_vect_subset),1)
+world_grid_vect$grid_id = seq(1,nrow(world_grid_vect),1)
 
 # create original site x species matrix
-grid_occ_overlap = relate(x = world_grid_vect_subset,
-                          y = frug_birds_overlap,
+grid_occ_overlap = relate(x = world_grid_vect,
+                          y = frug_birds,
                           relation = "intersects") #contains all created grids
 
 # replace column and grid names of site x species matrix
-bird_names = frug_birds_overlap$sci_name
+bird_names = frug_birds$sci_name
 colnames(grid_occ_overlap) = bird_names
-grid_ids = world_grid_vect_subset$grid_id
+grid_ids = world_grid_vect$grid_id
 rownames(grid_occ_overlap) = grid_ids
-
 
 # subset to grids that have at least 1 species
 grid_occ_overlap_filled = grid_occ_overlap[as.logical(rowSums(grid_occ_overlap)),]
-world_grid_vect_filled = world_grid_vect_subset[as.logical(rowSums(grid_occ_overlap))]
+world_grid_vect_filled = world_grid_vect[as.logical(rowSums(grid_occ_overlap))]
 
 # converting site x species to a matrix with 1s and 0s
 site_species_orig = as.matrix(grid_occ_overlap_filled) * 1
@@ -72,15 +65,19 @@ site_species_orig = as.matrix(grid_occ_overlap_filled) * 1
 # sub-setting to species which appear in at least one grid
 site_species_orig = site_species_orig[,as.logical(colSums(site_species_orig))]
 
-# saving site_species_orig and reading it again
-# saveRDS(site_species_orig, file = file.path(data.dir,'site_species_orig.rds'))
-site_species_orig = read_rds(file.path(data.dir,'site_species_orig.rds'))
+# saving site_species_orig
+# saveRDS(site_species_orig, file = file.path(data.dir,'Defaunation/site_species_orig.rds'))
 
-# saving all_traits and reading it again
-all_traits = values(frug_birds_overlap)
-# saveRDS(all_traits, file = file.path(data.dir,'all_traits.rds'))
-all_traits = read_rds(file.path(data.dir,'all_traits.rds'))
-  
+# saving all_traits
+all_traits = values(frug_birds)
+# saveRDS(all_traits, file = file.path(data.dir,'Defaunation/all_traits.rds'))
+
+
+## read these in
+# site_species_orig = read_rds(file.path(data.dir,'Defaunation/site_species_orig.rds'))
+# all_traits = read_rds(file.path(data.dir,'Defaunation/all_traits.rds'))
+
+
 ## Simulating defaunation ======================================================
 
 # create function that produces new site x species matrix based on simulation scenario
@@ -129,7 +126,8 @@ site_species_HL_WT = defaunate(occ = site_species_orig, bird_data = all_traits,
                             threat1 = "HL",  threat2 = "WT")
 
 
-## FD Analysis =================================================================
+
+## Preparing traits ============================================================
 
 # obtaining species x traits matrix
 rownames(all_traits) = all_traits$sci_name
@@ -151,50 +149,56 @@ fd_traits_orig <- fd_traits[match(colnames(site_species_orig),
 # species x traits using original species
 
 
+
+## PCoA ========================================================================
+tol = 1e-07
+
+## creating distance matrix 'x.dist'
+# scaling traits
+x.s <- apply(fd_traits_orig, 2, scale, center = TRUE, scale = TRUE)
+x.dist <- dist(x.s)
+
+x.rn <- row.names(fd_traits_orig)
+attr(x.dist, "Labels" ) <- x.rn
+
+# ordination
+n <- attr(x.dist, "Size")
+
+# create a matrix of distances with transformations (not sure why)
+A <- matrix(0, ncol = n, nrow = n)
+
+A[row(A) > col(A)] = -0.5 * x.dist^2 #why?
+
+A = A + t(A) # t() transposes the dataframe
+
+## ordination
+# gower's double-centering
+G = bicenter.wt(A)
+e = eigen(G, symmetric = TRUE) # i assume this does the ordination
+
+vectors <- e$vectors
+eig <- e$values
+
+# check if 'x.dist' is Euclidean or not
+w0 <- eig[n] / eig[1]
+if (w0 > -tol) r <- sum(eig > (eig[1] * tol)) else r <- length(eig)
+
+# PCoA axes; coordinates of all species in morphospace
+vectors <- vectors[, 1:r, drop = FALSE] %*% diag(sqrt(abs(eig <- eig[1:r])), r)
+dimnames(vectors) <- list(colnames(site_species_orig), NULL)
+
+
+
+## Functional Dispersion =======================================================
+
 # loading fdFunc script for funcdiv function
-source(file.path(main.dir,"src/fdFunc.R"))
+source(file.path(main.dir,"src/fdFunc1.R"))
 
 # FD calculations
-res_orig = funcdiv(x = fd_traits_orig, a = site_species_orig, original = TRUE)
-res_HL = funcdiv(x = fd_traits_orig, a = site_species_HL)
-res_WT = funcdiv(x = fd_traits_orig, a = site_species_WT)
-res_HL_WT = funcdiv(x = fd_traits_orig, a = site_species_HL_WT)
-
-
-## Null models =================================================================
-
-# loading nullModel script for null_mod function
-source(file.path(main.dir,"src/nullModel.R"))
-
-# do not run this!
-system.time({
-  null_res_HL = null_mod(site_species_orig,site_species_HL,res_orig,res_HL)
-})
-
-
-
-null_res_WT = null_mod(site_species_orig,site_species_WT,res_orig,res_WT)
-null_res_HL_WT = null_mod(site_species_orig,site_species_HL_WT,res_orig,res_HL_WT)
-
-
-
-
-# in progress
-z_scores = cbind(z_scores_orig, z_scores_HL, z_scores_WT, z_scores_HL_WT)
-colnames(z_scores) = c("z_orig", "z_HL", "z_WT", "z_HL_WT")
-f_disp = cbind(res_orig$FDis, res_HL$FDis, res_WT$FDis, res_HL_WT$FDis, 
-               colMeans(null_res_orig_fdis_mat), colMeans(null_res_HL_fdis_mat), 
-               colMeans(null_res_WT_fdis_mat), colMeans(null_res_HL_WT_fdis_mat))
-colnames(f_disp) = c("fdisp_orig", "fdisp_HL", "fdisp_WT", "fdisp_HL_WT", 
-                     "fdisp_orig_null", "fdisp_HL_null", "fdisp_WT_null", "fdisp_HL_WT_null")
-
-f_disp_z = as.data.frame(cbind(f_disp, z_scores))
-
-# checking if sequence of values in f_disp_z is same as grid_ids in world_grid_vect_filled
-any(values(world_grid_vect_filled)$grid_id != as.numeric(rownames(f_disp_z)))
-values(world_grid_vect_filled) = cbind(values(world_grid_vect_filled), f_disp_z)
-values(world_grid_vect_filled)$fortify_id = rownames(values(world_grid_vect_filled))
-
+res_orig = funcdiv(vectors = vectors, eig = eig, a = site_species_orig)
+res_HL = funcdiv(vectors = vectors, eig = eig, a = site_species_HL)
+res_WT = funcdiv(vectors = vectors, eig = eig, a = site_species_WT)
+res_HL_WT = funcdiv(vectors = vectors, eig = eig, a = site_species_HL_WT)
 
 
 orig_sp = sum(as.logical(colSums(site_species_orig)))
@@ -205,26 +209,76 @@ HL_WT_sp = sum(as.logical(colSums(site_species_HL_WT)))
 # total number of species globally for each scenario
 global_sr = c(orig_sp,HL_sp,WT_sp,HL_WT_sp)
 # species richness at cell level for each scenario
-cell_sr = as.data.frame(cbind(sr_orig = res_orig$uniq.sp, sr_HL = res_HL$uniq.sp, 
-                              sr_WT = res_WT$uniq.sp, sr_HL_WT = res_HL_WT$uniq.sp))
-nrow(cell_sr)
-nrow(cell_sr[cell_sr$sr_orig != cell_sr$sr_HL_WT,])
-
-values(world_grid_vect_filled) = cbind(values(world_grid_vect_filled), 
-                                       cell_sr[match(values(world_grid_vect_filled)$grid_id,
-                                                     rownames(cell_sr)),])
+cell_sr = as.data.frame(cbind(sr_orig = rowSums(site_species_orig), 
+                              sr_HL = rowSums(site_species_HL), 
+                              sr_WT = rowSums(site_species_WT), 
+                              sr_HL_WT = rowSums(site_species_HL_WT)))
 
 
-## Plotting Maps ============================================
+## Null models =================================================================
+
+# loading nullModel script for null_mod function
+source(file.path(main.dir,"src/nullModel.R"))
+
+null_HL = null_mod(site_species_orig, cell_sr$sr_HL,vectors, eig)
+null_HL_mat = do.call("rbind",null_HL)
+
+null_WT = null_mod(site_species_orig, cell_sr$sr_WT,vectors, eig)
+null_WT_mat = do.call("rbind",null_WT)
+
+null_HL_WT = null_mod(site_species_orig, cell_sr$sr_HL_WT,vectors, eig)
+null_HL_WT_mat = do.call("rbind",null_HL_WT)
+
+z_HL = (res_HL$FDis - rowMeans(null_HL_mat))/apply(null_HL_mat, MARGIN = 1, FUN = sd)
+z_WT = (res_WT$FDis - rowMeans(null_WT_mat))/apply(null_WT_mat, MARGIN = 1, FUN = sd)
+z_HL_WT = (res_HL_WT$FDis - rowMeans(null_HL_WT_mat))/apply(null_HL_WT_mat, MARGIN = 1, FUN = sd)
+
+
+# collating results
+z_scores = cbind(z_HL, z_WT, z_HL_WT)
+colnames(z_scores) = c("z_HL", "z_WT", "z_HL_WT")
+f_disp = cbind(res_orig$FDis, res_HL$FDis, res_WT$FDis, res_HL_WT$FDis, 
+               rowMeans(null_HL_mat), rowMeans(null_WT_mat), 
+               rowMeans(null_HL_WT_mat))
+colnames(f_disp) = c("fdisp_orig", "fdisp_HL", "fdisp_WT", "fdisp_HL_WT", 
+                     "fdisp_HL_null", "fdisp_WT_null", "fdisp_HL_WT_null")
+f_disp_z = as.data.frame(cbind(f_disp, z_scores))
+
+
+# checking if sequence of values in f_disp_z is same as grid_ids in world_grid_vect_filled
+any(values(world_grid_vect_filled)$grid_id != as.numeric(rownames(f_disp_z)))
+
+
+# creating data frame with all required values
+data_final = values(world_grid_vect_filled)
+data_final$fortify_id = rownames(data_final)
+data_final = cbind(data_final, f_disp_z, cell_sr[match(data_final$grid_id,
+                                                       rownames(cell_sr)),])
+
+# saving out results
+# saveRDS(data_final, file = file.path(results.dir,'Defaunation/data_final.rds'))
+# write.csv(data_final, file = file.path(results.dir,'Defaunation/data_final.csv'))
+
+## Plotting Maps ===============================================================
 # fortify tdwg and grids and merge the data with the fortified data frame
 tdwg_l3_fortified = fortify(as(tdwg_l3, "Spatial"))
 grid_fortified = fortify(as(world_grid_vect_filled, "Spatial")) %>%
-  left_join(., values(world_grid_vect_filled), by = c("id"="fortify_id"))
+  left_join(., data_final, by = c("id"="fortify_id"))
+
+
+# in progress!
+ggplot() +
+  geom_polygon(data = grid_fortified, aes(x = long, y = lat, group = group, fill = sr_orig)) +
+  scale_fill_viridis(option = 'mako') +
+  geom_polygon(data = tdwg_l3_fortified, aes(x = long, y = lat, group = group), color = "black", fill = NA) +
+  theme_void()
+
 
 # original species richness
 ggplot() +
   geom_polygon(data = tdwg_l3_fortified, aes(x = long, y = lat, group = group), color = "black", fill = "white") +
-  geom_polygon(data = grid_fortified, aes(x = long, y = lat, group = group, fill = sr_orig))
+  geom_polygon(data = grid_fortified, aes(x = long, y = lat, group = group, fill = sr_orig)) +
+  theme_void()
 
 # HL species richness
 ggplot() +
@@ -241,17 +295,17 @@ ggplot() +
   geom_polygon(data = tdwg_l3_fortified, aes(x = long, y = lat, group = group), color = "black", fill = "white") +
   geom_polygon(data = grid_fortified, aes(x = long, y = lat, group = group, fill = sr_HL_WT))
 
-# z_orig
+# z_HL
 ggplot() +
   geom_polygon(data = tdwg_l3_fortified, aes(x = long, y = lat, group = group), color = "black", fill = "white") +
-  geom_polygon(data = grid_fortified, aes(x = long, y = lat, group = group, fill = ))
+  geom_polygon(data = grid_fortified, aes(x = long, y = lat, group = group, fill = z_HL))
 
-# ggplot() +
-#   geom_polygon(data = fortify(as(tdwg_l3, "Spatial")), aes(x = long, y = lat, group = group), color = "black", fill = "white") +
-#   geom_polygon(data = fortify(as(world_grid_vect_filled, "Spatial")), aes(x = long, y = lat, group = group), color = "red", fill = "red")
-# 
-# 
-# ggplot() +
-#   geom_polygon(data = fortify(as(tdwg_l3, "Spatial")), aes(x = long, y = lat, group = group), color = "black", fill = "white") +
-#   geom_polygon(data = fortify(as(world_grid_vect_filled, "Spatial")), aes(x = long, y = lat, group = group), color = "red", fill = "red")
+# z_WT
+ggplot() +
+  geom_polygon(data = tdwg_l3_fortified, aes(x = long, y = lat, group = group), color = "black", fill = "white") +
+  geom_polygon(data = grid_fortified, aes(x = long, y = lat, group = group, fill = z_WT))
 
+# z_HL_WT
+ggplot() +
+  geom_polygon(data = tdwg_l3_fortified, aes(x = long, y = lat, group = group), color = "black", fill = "white") +
+  geom_polygon(data = grid_fortified, aes(x = long, y = lat, group = group, fill = z_HL_WT))
