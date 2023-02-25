@@ -18,7 +18,7 @@ library(ggrepel)
 library(picante)
 library(broom)
 library(tidyverse)
-library(viridis)
+library(RColorBrewer)
 
 
 set.seed(500)
