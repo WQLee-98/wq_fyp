@@ -1,7 +1,12 @@
 rm(list = ls())
 gc()
 
-main.dir = "C:/Users/leewq/Documents/FYP Working Folder"
+if(Sys.info()["user"] == "junyinglim"){
+    main.dir = "OneDrive - National University of Singapore/PEEBL FYP Projects/Avian Functional Diversity Loss/"
+} else {
+  main.dir = "C:/Users/leewq/Documents/FYP Working Folder"  
+}
+
 raw.dir = file.path(main.dir,"raw")
 data.dir = file.path(main.dir,"data")
 results.dir = file.path(main.dir,"results")
@@ -368,7 +373,7 @@ orig_sr_map = ggplot() +
         plot.title = element_text(hjust = 0.5, size = 20), 
         legend.text = element_text(size = 12),
         legend.title = element_text(size = 14))+
-  coord_map(projection = "mollweide") # mollweide projection has issues
+  coord_map(projection = "mollweide", xlim = c(-180,180)) # mollweide projection has issues
 
 orig_sr_map
 
