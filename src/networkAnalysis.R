@@ -16,6 +16,9 @@ library(bipartite)
 library(glue)
 library(ggplot2)
 library(ggrepel)
+library(letsR)
+library(terra)
+library(sf)
 
 ## Data preparation ============================================================
 # read Fricke's network data (without unidentified taxa)
@@ -148,12 +151,15 @@ for (i in 1:length(network_unique_bird_list_final)){
 }
 
 
-## Interaction uniqueness ======================================================
+## Seed Dispersal Reliance ======================================================
 # create bird x plant matrix for each network
 bird_plant = lapply(network_int_list_final, FUN = acast,formula = animal.id~plant.id, 
-                    fill = 0, fun.aggregate = length, value.var = "plant.id")
+                    fill = 0, fun.aggregate = length, value.var = "plant.id") %>%
+  lapply(., FUN = function(x){
+    as.matrix((x>0)+0)
+  })
 
-# create function that calculates the interaction uniqueness of each species in each network
+# create function that calculates the Seed Dispersal Reliance of each species in each network
 int_uniq = function(x){
   # Arguments
   #   x: bird x plant matrix for a network
@@ -178,9 +184,9 @@ for (i in 1:length(network_dist)){
 
 # normalising data
 for (i in 1:length(bird_data)){
-  bird_data[[i]]$dist.cent.global.norm = bird_data[[i]]$dist.cent.global / max(bird_data[[i]]$dist.cent.global)
-  bird_data[[i]]$dist.cent.network.norm = bird_data[[i]]$dist.cent.network / max(bird_data[[i]]$dist.cent.network)
-  bird_data[[i]]$int.uniq.norm = bird_data[[i]]$int.uniq / max(bird_data[[i]]$int.uniq)
+  bird_data[[i]]$dist.cent.global.norm = scale(bird_data[[i]]$dist.cent.global)
+  bird_data[[i]]$dist.cent.network.norm = scale(bird_data[[i]]$dist.cent.network)
+  bird_data[[i]]$int.uniq.norm = scale(bird_data[[i]]$int.uniq)
 }
 
 
@@ -200,6 +206,10 @@ range(bird_data_final$int.uniq.norm)
 ## Model fitting (linear mixed effects model) ==================================
 # making net.id a factor
 bird_data_final$net.id = factor(bird_data_final$net.id)
+
+# saving bird_data_final
+# saveRDS(bird_data_final, file = file.path(results.dir,'Uniqueness/bird_data_final.rds'))
+# bird_data_final = readRDS(file.path(results.dir,'Uniqueness/bird_data_final.rds'))
 
 
 plot(int.uniq~dist.cent.global, data = bird_data_final)
@@ -290,14 +300,15 @@ abline(coef = network_fixed_rand_int_model$coefficients$fixed, col = "red")
 network_fixed_rand_slope_model = lme(int.uniq.norm~dist.cent.network.norm, random = ~1 + dist.cent.network.norm|net.id, data = bird_data_final)
 summary(network_fixed_rand_slope_model)
 r.squaredGLMM(network_fixed_rand_slope_model)
-test <- coefficients(network_fixed_rand_slope_model)
-str(network_fixed_rand_slope_model)
 
-ggplot() + geom_point(aes(y = int.uniq.norm, x = dist.cent.network.norm), 
-                      data = bird_data_final) +
-  geom_abline(aes(intercept = 0.2187702, slope = 0.15), col = "red") +
-  geom_abline(aes(intercept = `(Intercept)`, slope = dist.cent.network.norm),
-              data =test )
+# test <- coefficients(network_fixed_rand_slope_model)
+# str(network_fixed_rand_slope_model)
+# 
+# ggplot() + geom_point(aes(y = int.uniq.norm, x = dist.cent.network.norm), 
+#                       data = bird_data_final) +
+#   geom_abline(aes(intercept = 0.2187702, slope = 0.15), col = "red") +
+#   geom_abline(aes(intercept = `(Intercept)`, slope = dist.cent.network.norm),
+#               data =test )
 
 plot(network_fixed_rand_slope_model) # check heteroscedasticity in whole model
 plot(network_fixed_rand_slope_model,resid(.,scaled=TRUE)~fitted(.)|net.id,abline=0) # check heteroscedasticity in each network
@@ -382,6 +393,26 @@ anova(network_fixed_rand_slope_model_ML, network_rand_slope_model_ML)
 
 
 ## Plotting graphs =============================================================
+all_networks_scatter = ggplot(data = bird_data_final, aes(x = dist.cent.network.norm, y = int.uniq.norm)) +
+  geom_point() +
+  labs(x = "Morphological Uniqueness", y = "Seed Dispersal Reliance") +
+  geom_abline(aes(slope = network_fixed_rand_slope_model$coefficients$fixed[2], 
+                  intercept = network_fixed_rand_slope_model$coefficients$fixed[1]), 
+              col = 'red', size = 1.5, show.legend = F) +
+  theme(axis.text = element_text(size=12), 
+        axis.title = element_text(size = 14))
+
+all_networks_scatter
+
+
+# ggsave(filename = "all_networks_scatter.png", plot = all_networks_scatter, path = figures.dir, width = 25,
+#        height = 15, units = "cm", dpi = "retina")
+
+
+
+
+
+
 ## PCoA global
 # using cmdscale function for pcoa
 pcoa_global = cmdscale(fd_res_global$dist.mat, k = 4, eig = T, add = T)
@@ -437,73 +468,73 @@ pe_global_graph
 
 
 
-
-
+slope_coef_ordered = as.data.frame(network_fixed_rand_slope_model_coef) %>%
+  arrange(desc(dist.cent.network.norm))
 
 
 ## PCoA network 
 # finding max slope
-network_fixed_rand_slope_model_coef[which.max(network_fixed_rand_slope_model_coef[,2]),] # Malacco da Silva 2014
-fd_res_network$FDis["Malacco da Silva 2014"]
+network_fixed_rand_slope_model_coef[which.max(network_fixed_rand_slope_model_coef[,2]),] # Dehling 2017 San Pedro 1 
+fd_res_network$FDis["Dehling 2017 San Pedro 1"]
 
 # max slope
-pcoa_malacco = cmdscale(fd_res_network$dist.mat$`Malacco da Silva 2014`, k = 4, eig = T, add = T)
-malacco_positions = as.data.frame(pcoa_malacco$points)
-colnames(malacco_positions) = c("pcoa1", "pcoa2", "pcoa3", "pcoa4")
+pcoa_dehling = cmdscale(fd_res_network$dist.mat$`Dehling 2017 San Pedro 1`, k = 4, eig = T, add = T)
+dehling_positions = as.data.frame(pcoa_dehling$points)
+colnames(dehling_positions) = c("pcoa1", "pcoa2", "pcoa3", "pcoa4")
 
 # adding taxonomy data
-malacco_tax = AVONET_traits[,c("Species1", "Family1", "Order1")]
-malacco_tax = malacco_tax[malacco_tax$Species1 %in% rownames(malacco_positions),]
-malacco_tax = malacco_tax[match(rownames(malacco_positions),malacco_tax$Species1),]
-malacco_positions = cbind(malacco_positions, Family = malacco_tax$Family1, Order = malacco_tax$Order1)
+dehling_tax = AVONET_traits[,c("Species1", "Family1", "Order1")]
+dehling_tax = dehling_tax[dehling_tax$Species1 %in% rownames(dehling_positions),]
+dehling_tax = dehling_tax[match(rownames(dehling_positions),dehling_tax$Species1),]
+dehling_positions = cbind(dehling_positions, Family = dehling_tax$Family1, Order = dehling_tax$Order1)
 
 # calculating percentage variance explained by each pcoa axis
-malacco_percent_explained = (100 * pcoa_malacco$eig / sum(pcoa_malacco$eig))
-malacco_rounded_pe = round(malacco_percent_explained[1:4],2)
+dehling_percent_explained = (100 * pcoa_dehling$eig / sum(pcoa_dehling$eig))
+dehling_rounded_pe = round(dehling_percent_explained[1:4],2)
 
 
-labs_malacco = c(glue("PCoA 1 ({malacco_rounded_pe[1]}%)"),
-                 glue("PCoA 2 ({malacco_rounded_pe[2]}%)"))
+labs_dehling = c(glue("PCoA 1 ({dehling_rounded_pe[1]}%)"),
+                 glue("PCoA 2 ({dehling_rounded_pe[2]}%)"))
 
 # plot pcoa
-malacco_positions_tibble = as_tibble(malacco_positions, rownames = "species")
-malacco_centroid = apply(pcoa_malacco$points,2,FUN = mean)
-pcoa_malacco_graph = ggplot(data = malacco_positions_tibble, aes(x = pcoa1, y = pcoa2)) +
+dehling_positions_tibble = as_tibble(dehling_positions, rownames = "species")
+dehling_centroid = apply(pcoa_dehling$points,2,FUN = mean)
+pcoa_dehling_graph = ggplot(data = dehling_positions_tibble, aes(x = pcoa1, y = pcoa2)) +
   geom_point(aes(color = Order)) +
-  geom_text_repel(aes(label=ifelse(pcoa1 > 3 | pcoa2 > 2, as.character(species),''))) +
-  labs(x = labs_malacco[1], y = labs_malacco[2], title = 'Malacco da Silva 2014 Network') +
+  geom_text_repel(aes(label=ifelse(pcoa1 < (-2) | pcoa2 < (-2), as.character(species),''))) +
+  labs(x = labs_dehling[1], y = labs_dehling[2], title = 'Dehling 2017 San Pedro 1 Network') +
   theme(axis.text = element_text(size=12), 
         axis.title = element_text(size = 14),
         legend.title = element_text(size = 14),
         legend.text = element_text(size = 11),
         title = element_text(face = 'bold'),
         plot.title = element_text(hjust = 0.5, size = 20))
-pcoa_malacco_graph
+pcoa_dehling_graph
 
-# ggsave(filename = "pcoa_malacco.png", plot = pcoa_malacco_graph, path = figures.dir, width = 25,
+# ggsave(filename = "pcoa_dehling.png", plot = pcoa_dehling_graph, path = figures.dir, width = 25,
 #        height = 15, units = "cm", dpi = "retina")
 
-malacco_scatter_data = subset(bird_data_final, net.id == 'Malacco da Silva 2014')
-malacco_scatter_tax = AVONET_traits[,c("Species1", "Family1", "Order1")]
-malacco_scatter_tax = malacco_scatter_tax[malacco_scatter_tax$Species1 %in% malacco_scatter_data$animal.id,]
-malacco_scatter_tax = malacco_scatter_tax[match(malacco_scatter_data$animal.id,malacco_scatter_tax$Species1),]
-malacco_scatter_data = cbind(malacco_scatter_data, Family = malacco_scatter_tax$Family1, Order = malacco_scatter_tax$Order1)
+dehling_scatter_data = subset(bird_data_final, net.id == 'Dehling 2017 San Pedro 1')
+dehling_scatter_tax = AVONET_traits[,c("Species1", "Family1", "Order1")]
+dehling_scatter_tax = dehling_scatter_tax[dehling_scatter_tax$Species1 %in% dehling_scatter_data$animal.id,]
+dehling_scatter_tax = dehling_scatter_tax[match(dehling_scatter_data$animal.id,dehling_scatter_tax$Species1),]
+dehling_scatter_data = cbind(dehling_scatter_data, Family = dehling_scatter_tax$Family1, Order = dehling_scatter_tax$Order1)
 
 
-malacco_scatter = ggplot() +
-  geom_abline(aes(slope = network_fixed_rand_slope_model$coefficients$random$net.id['Malacco da Silva 2014',][2], 
-                  intercept = network_fixed_rand_slope_model$coefficients$random$net.id['Malacco da Silva 2014',][1]), 
+dehling_scatter = ggplot() +
+  geom_abline(aes(slope = network_fixed_rand_slope_model$coefficients$random$net.id['Dehling 2017 San Pedro 1',][2], 
+                  intercept = network_fixed_rand_slope_model$coefficients$random$net.id['Dehling 2017 San Pedro 1',][1]), 
               color = "red", size = 1.5, show.legend = F) +
-  geom_point(data=malacco_scatter_data, aes(x = dist.cent.network.norm, y = int.uniq.norm, color = Order)) +
-  labs(x = "Morphological Uniqueness", y = "Interaction Uniqueness", title = 'Malacco da Silva 2014 Network') +
+  geom_point(data=dehling_scatter_data, aes(x = dist.cent.network.norm, y = int.uniq.norm, color = Order)) +
+  labs(x = "Morphological Uniqueness", y = "Seed Dispersal Reliance", title = 'Dehling 2017 San Pedro 1 Network') +
   theme(axis.text = element_text(size=12), 
         axis.title = element_text(size = 14),        
         title = element_text(face = 'bold'),
         plot.title = element_text(hjust = 0.5, size = 20))
 
-malacco_scatter
+dehling_scatter
 
-# ggsave(filename = "malacco_scatter.png", plot = malacco_scatter, path = figures.dir, width = 25,
+# ggsave(filename = "dehling_scatter.png", plot = dehling_scatter, path = figures.dir, width = 25,
 #        height = 15, units = "cm", dpi = "retina")
 
 
@@ -558,7 +589,7 @@ sethi_scatter_data = cbind(sethi_scatter_data, Family = sethi_scatter_tax$Family
 
 
 sethi_scatter = ggplot(data=sethi_scatter_data, aes(x = dist.cent.network.norm, y = int.uniq.norm, color = Order)) +
-  labs(x = "Morphological Uniqueness", y = "Interaction Uniqueness", title = "Sethi 2012 Network") +
+  labs(x = "Morphological Uniqueness", y = "Seed Dispersal Reliance", title = "Sethi 2012 Network") +
   geom_abline(aes(slope = network_fixed_rand_slope_model$coefficients$random$net.id['Sethi 2012',][2], 
                   intercept = network_fixed_rand_slope_model$coefficients$random$net.id['Sethi 2012',][1]),
               color = 'red', size = 1.5, show.legend = F) +
@@ -574,20 +605,105 @@ sethi_scatter
 #        height = 15, units = "cm", dpi = "retina")
 
 
-all_networks_scatter = ggplot(data = bird_data_final, aes(x = dist.cent.network.norm, y = int.uniq.norm)) +
-  geom_point() +
-  labs(x = "Morphological Uniqueness", y = "Interaction Uniqueness") +
-  geom_abline(aes(slope = network_fixed_rand_slope_model$coefficients$fixed[2], 
-                  intercept = network_fixed_rand_slope_model$coefficients$fixed[1], 
-                  col = 'red'), size = 1.5, show.legend = F) +
+
+
+# Quitian 2018 2000Natural
+fd_res_network$FDis["Quitian 2018 2000Natural"]
+
+# max slope
+pcoa_Quitian = cmdscale(fd_res_network$dist.mat$`Quitian 2018 2000Natural`, k = 4, eig = T, add = T)
+Quitian_positions = as.data.frame(pcoa_Quitian$points)
+colnames(Quitian_positions) = c("pcoa1", "pcoa2", "pcoa3", "pcoa4")
+
+# adding taxonomy data
+Quitian_tax = AVONET_traits[,c("Species1", "Family1", "Order1")]
+Quitian_tax = Quitian_tax[Quitian_tax$Species1 %in% rownames(Quitian_positions),]
+Quitian_tax = Quitian_tax[match(rownames(Quitian_positions),Quitian_tax$Species1),]
+Quitian_positions = cbind(Quitian_positions, Family = Quitian_tax$Family1, Order = Quitian_tax$Order1)
+
+# calculating percentage variance explained by each pcoa axis
+Quitian_percent_explained = (100 * pcoa_Quitian$eig / sum(pcoa_Quitian$eig))
+Quitian_rounded_pe = round(Quitian_percent_explained[1:4],2)
+
+
+labs_Quitian = c(glue("PCoA 1 ({Quitian_rounded_pe[1]}%)"),
+                 glue("PCoA 2 ({Quitian_rounded_pe[2]}%)"))
+
+# plot pcoa
+Quitian_positions_tibble = as_tibble(Quitian_positions, rownames = "species")
+Quitian_centroid = apply(pcoa_Quitian$points,2,FUN = mean)
+pcoa_Quitian_graph = ggplot(data = Quitian_positions_tibble, aes(x = pcoa1, y = pcoa2)) +
+  geom_point(aes(color = Order)) +
+  geom_text_repel(aes(label=ifelse(pcoa1 < (-2) | pcoa2 < (-2), as.character(species),''))) +
+  labs(x = labs_Quitian[1], y = labs_Quitian[2], title = 'Quitian 2018 2000Natural Network') +
   theme(axis.text = element_text(size=12), 
-        axis.title = element_text(size = 14))
+        axis.title = element_text(size = 14),
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size = 11),
+        title = element_text(face = 'bold'),
+        plot.title = element_text(hjust = 0.5, size = 20))
+pcoa_Quitian_graph
 
-all_networks_scatter
-
-
-# ggsave(filename = "all_networks_scatter.png", plot = all_networks_scatter, path = figures.dir, width = 25,
+# ggsave(filename = "pcoa_Quitian.png", plot = pcoa_Quitian_graph, path = figures.dir, width = 25,
 #        height = 15, units = "cm", dpi = "retina")
+
+Quitian_scatter_data = subset(bird_data_final, net.id == 'Quitian 2018 2000Natural')
+Quitian_scatter_tax = AVONET_traits[,c("Species1", "Family1", "Order1")]
+Quitian_scatter_tax = Quitian_scatter_tax[Quitian_scatter_tax$Species1 %in% Quitian_scatter_data$animal.id,]
+Quitian_scatter_tax = Quitian_scatter_tax[match(Quitian_scatter_data$animal.id,Quitian_scatter_tax$Species1),]
+Quitian_scatter_data = cbind(Quitian_scatter_data, Family = Quitian_scatter_tax$Family1, Order = Quitian_scatter_tax$Order1)
+
+
+Quitian_scatter = ggplot() +
+  geom_abline(aes(slope = network_fixed_rand_slope_model$coefficients$random$net.id['Quitian 2018 2000Natural',][2], 
+                  intercept = network_fixed_rand_slope_model$coefficients$random$net.id['Quitian 2018 2000Natural',][1]), 
+              color = "red", size = 1.5, show.legend = F) +
+  geom_point(data=Quitian_scatter_data, aes(x = dist.cent.network.norm, y = int.uniq.norm, color = Order)) +
+  labs(x = "Morphological Uniqueness", y = "Seed Dispersal Reliance", title = 'Quitian 2018 2000Natural Network') +
+  theme(axis.text = element_text(size=12), 
+        axis.title = element_text(size = 14),        
+        title = element_text(face = 'bold'),
+        plot.title = element_text(hjust = 0.5, size = 20))
+
+Quitian_scatter
+
+# ggsave(filename = "Quitian_scatter.png", plot = Quitian_scatter, path = figures.dir, width = 25,
+#        height = 15, units = "cm", dpi = "retina")
+
+
+
+# locations of networks
+locations = lapply(network_unique_bird_list_final, FUN = function(x){
+  x[1,c("net.id","latitude","longitude")]
+}) %>%
+  do.call("rbind",.)
+
+tdwg_l1 = vect(file.path(raw.dir, "SpatialData/TDWG/level1/level1_dissolved.shp"))
+tdwg_l1_fortified = fortify(as(tdwg_l1, "Spatial"))
+
+network_location_map = ggplot() +
+  geom_polygon(data = tdwg_l1_fortified, aes(x = long, y = lat, group = group), color = "black", fill = NA) +
+  geom_point(data = locations, aes(x = longitude, y = latitude), shape = 21, fill = '#33a02c', color = 'black', size = 2.5, stroke = 0.8) +
+  labs(title = "Network Locations") +
+  theme_void() +
+  theme(title = element_text(face = 'bold'), legend.position = 'bottom',
+        plot.title = element_text(hjust = 0.5, size = 20), 
+        legend.text = element_text(size = 12),
+        legend.title = element_text(size = 14)) + 
+  coord_map(projection = "mollweide", xlim = c(-180,180), ylim = c(-55,90))
+
+network_location_map
+
+
+# ggsave(filename = "network_location_map.png", plot = network_location_map, path = figures.dir, width = 25,
+#        height = 15, units = "cm", dpi = "retina")
+
+
+
+
+
+
+
 
 
 

@@ -5,7 +5,8 @@ This repository contains 5 folders - src, raw, data, results, figures
 ### src: source r codes
 ## exploring defaunationa and functional diversity of avian frugivores
 # retrieveThreats: retrieve threat magnitudes for every avian frugivore, calculates missing magnitude scores, and creates a dataframe with the maximum magnitude scores per threat for every species
-# defaunationAnalysis: simulates defaunation,calculates functional dispersion before and after defaunation, calculates z-scores, and plots maps and graphs
+# defaunationAnalysis: simulates defaunation,calculates functional dispersion before and after defaunation, calculates z-scores
+# defaunationPlot: plots maps and graphs
 # defaunationDataExploration: exploring relationship between factors from dataset
 # fdFunc1: functional dispersion functions used for 'defaunationAnalysis'
 # nullModel: null model function to calculate 999 randomised functional dispersion values for each cell
