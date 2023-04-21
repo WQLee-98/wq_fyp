@@ -19,24 +19,31 @@ library(ggplot2)
 library(tidyverse)
 library(RColorBrewer)
 library(reshape2)
+library(cowplot)
 
 
 # reading in spatial files and results
-tdwg_l1 = vect(file.path(raw.dir, "SpatialData/TDWG/level1/level1_dissolved.shp"))
+tdwg_l1_fortified = readRDS(file.path(data.dir,'Defaunation/tdwg_l1_fortified.rds'))
+grid_fortified = readRDS(file.path(results.dir,'Defaunation/grid_fortified.rds'))
 all_traits = readRDS(file.path(data.dir,'Defaunation/all_traits_1degree.rds'))
-mean_mag = readRDS(file.path(data.dir,'Defaunation/mean_mag_1degree.rds'))
-world_grid_vect_filled = readRDS(file.path(data.dir, 'Defaunation/world_grid_vect_filled_1degree.rds'))
-world_grid_vect_filled = vect(world_grid_vect_filled)
-data_final = readRDS(file.path(results.dir,'Defaunation/data_final_1degree.rds'))
 
-mean_mag$grid_id = as.numeric(mean_mag$grid_id)
 
-# fortify tdwg and grids and merge the data with the fortified data frame
-tdwg_l1_fortified = fortify(as(tdwg_l1, "Spatial"))
-grid_fortified = fortify(as(world_grid_vect_filled, "Spatial")) %>%
-  left_join(., data_final, by = c("id"="fortify_id")) %>%
-  left_join(.,mean_mag, by = c("grid_id"="grid_id"))
+## pcoa graph ==================================================================
+pcoa_graph = readRDS(file.path(results.dir,'Defaunation/pcoa_graph.rds'))
+pe_graph = readRDS(file.path(results.dir,'Defaunation/pe_graph.rds'))
+pcoa_graph
+pe_graph
 
+## morphology density plots ====================================================
+dens_mass = readRDS(file.path(results.dir,'Defaunation/dens_mass.rds'))
+dens_bl = readRDS(file.path(results.dir,'Defaunation/dens_bl.rds'))
+dens_bw = readRDS(file.path(results.dir,'Defaunation/dens_bw.rds'))
+dens_kipps = readRDS(file.path(results.dir,'Defaunation/dens_kipps.rds'))
+
+dens_mass
+dens_bl
+dens_bw
+dens_kipps
 
 ## species richness ============================================================
 
@@ -179,10 +186,8 @@ HL_sp_lost_map = ggplot() +
   geom_polygon(data = tdwg_l1_fortified, aes(x = long, y = lat, group = group), color = "black", fill = NA) +
   labs(title = "Habitat Loss") +
   theme_void() +
-  theme(title = element_text(face = 'bold'), legend.position = 'bottom',
-        plot.title = element_text(hjust = 0.5, size = 20), 
-        legend.text = element_text(size = 12),
-        legend.title = element_text(size = 14))  + 
+  theme(title = element_text(face = 'bold'), 
+        plot.title = element_text(hjust = 0.5))  + 
   coord_map(projection = "mollweide", xlim = c(-180,180), ylim = c(-55,90))
 
 HL_sp_lost_map
@@ -203,16 +208,13 @@ WT_sp_lost_map = ggplot() +
   geom_polygon(data = tdwg_l1_fortified, aes(x = long, y = lat, group = group), color = "black", fill = NA) +
   labs(title = "Wildlife Trade") +
   theme_void() +
-  theme(title = element_text(face = 'bold'), legend.position = 'bottom',
-        plot.title = element_text(hjust = 0.5, size = 20), 
-        legend.text = element_text(size = 12),
-        legend.title = element_text(size = 14),
-        legend.title.align = 0.5)  + 
+  theme(title = element_text(face = 'bold'), 
+        plot.title = element_text(hjust = 0.5))  + 
   coord_map(projection = "mollweide", xlim = c(-180,180), ylim = c(-55,90))
 
 WT_sp_lost_map
 
-# HL + WT
+# HL|WT
 HL_WT_sp_lost_map = ggplot() +
   geom_polygon(data = grid_fortified, aes(x = long, y = lat, group = group, fill = HL_WT_sp_lost_breaks)) +
   scale_fill_manual(values = sp_lost_colour, name = "Number of Species with Threat Magnitude > 5",
@@ -227,10 +229,8 @@ HL_WT_sp_lost_map = ggplot() +
   geom_polygon(data = tdwg_l1_fortified, aes(x = long, y = lat, group = group), color = "black", fill = NA) +
   labs(title = "Habitat Loss & Wildlife Trade") +
   theme_void() +
-  theme(title = element_text(face = 'bold'), legend.position = 'bottom',
-        plot.title = element_text(hjust = 0.5, size = 20), 
-        legend.text = element_text(size = 12),
-        legend.title = element_text(size = 14))  + 
+  theme(title = element_text(face = 'bold'), 
+        plot.title = element_text(hjust = 0.5))  + 
   coord_map(projection = "mollweide", xlim = c(-180,180), ylim = c(-55,90))
 
 HL_WT_sp_lost_map
@@ -386,7 +386,7 @@ z_colour = c("#67001F", "#B2182B", "#D6604D", "#F4A582", "#FDDBC7", "#92C5DE", "
 # z_HL
 HL_z_map = ggplot() +
   geom_polygon(data = grid_fortified, aes(x = long, y = lat, group = group, fill = z_HL_breaks)) +
-  scale_fill_manual(values = z_colour, name = "SES", na.value = 'grey80',
+  scale_fill_manual(values = z_colour, name = "Functional Dispersion Lost", na.value = 'grey80',
                     guide = guide_legend(direction = 'horizontal',
                                          title.position = 'top',
                                          title.hjust = 0.5,
@@ -410,7 +410,7 @@ HL_z_map
 # z_WT
 WT_z_map = ggplot() +
   geom_polygon(data = grid_fortified, aes(x = long, y = lat, group = group, fill = z_WT_breaks)) +
-  scale_fill_manual(values = z_colour, name = "SES", na.value = 'grey80',
+  scale_fill_manual(values = z_colour, name = "Functional Dispersion Lost", na.value = 'grey80',
                     guide = guide_legend(direction = 'horizontal',
                                          title.position = 'top',
                                          title.hjust = 0.5,
@@ -434,7 +434,7 @@ WT_z_map
 # z_HL_WT
 HL_WT_z_map = ggplot() +
   geom_polygon(data = grid_fortified, aes(x = long, y = lat, group = group, fill = z_HL_WT_breaks)) +
-  scale_fill_manual(values = z_colour, name = "SES", na.value = 'grey80',
+  scale_fill_manual(values = z_colour, name = "Functional Dispersion Lost", na.value = 'grey80',
                     guide = guide_legend(direction = 'horizontal',
                                          title.position = 'top',
                                          title.hjust = 0.5,
@@ -512,13 +512,33 @@ mean_WT_map = ggplot() +
 mean_WT_map
 
 
-# experimenting with cowplot
-# library(cowplot)
-# x <- plot_grid(HL_WT_z_map, HL_WT_z_map, nrow = 2, ncol = 1, labels = "auto")
-# ggsave(x, filename = "nhffjyj.pdf", height = 6, width = 3, path = figures.dir)
 
+
+## creating figures ============================================================
+# species lost for all scenarios [WIP]
+sp_lost_legend = get_legend(HL_WT_sp_lost_map + theme(legend.position = "bottom")
+)
+
+sp_lost_maps = plot_grid(HL_sp_lost_map + theme(legend.position = "none"), 
+                         WT_sp_lost_map + theme(legend.position = "none"), 
+                         HL_WT_sp_lost_map + theme(legend.position = "none"),
+                         sp_lost_legend, 
+                         ncol = 1, labels = c("A","B","C",""),
+                         rel_heights = c(1,1,1,0.1),
+                         align = "v")
+  
 
 ## saving maps =================================================================
+save_plot(file.path(figures.dir, "sp_lost_maps_test.png"),sp_lost_maps,
+          base_height = 8, base_width = 4,bg="white")
+
+
+# ggsave(filename = "pcoa_graph_defaun.png", plot = pcoa_graph, path = figures.dir, width = 25,
+#        height = 15, units = "cm", dpi = "retina")
+# ggsave(filename = "pe_graph_defaun.png", plot = pe_graph, path = figures.dir, width = 25,
+#        height = 15, units = "cm", dpi = "retina")
+
+
 # ggsave(filename = "sr_orig_defaun_1degree.png", plot = orig_sr_map, path = figures.dir, width = 25,
 #        height = 15, units = "cm", dpi = "retina")
 # ggsave(filename = "sr_HL_defaun_1degree.png", plot = HL_sr_map, path = figures.dir, width = 25,

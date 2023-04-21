@@ -74,16 +74,6 @@ site_species_orig = site_species_orig[,as.logical(colSums(site_species_orig))]
 all_traits = values(frug_birds)
 all_traits[,c("HL","WT")] = sapply(all_traits[,c("HL","WT")], as.numeric)
 
-# saving world_grid_vect_filled
-# saveRDS(world_grid_vect_filled, file = file.path(data.dir,'Defaunation/world_grid_vect_filled_1degree.rds'))
-
-# saving site_species_orig
-# saveRDS(site_species_orig, file = file.path(data.dir,'Defaunation/site_species_orig_1degree.rds'))
-
-# saving all_traits
-# saveRDS(all_traits, file = file.path(data.dir,'Defaunation/all_traits_1degree.rds'))
-
-
 
 ## Simulating defaunation ======================================================
 
@@ -174,7 +164,6 @@ mean_mag = lapply(all_mag, FUN = function(x){
 mean_mag$grid_id = names(all_mag)
 colnames(mean_mag) = c('mean_HL','mean_WT','grid_id')
 
-# saveRDS(mean_mag, file = file.path(data.dir,'Defaunation/mean_mag_1degree.rds'))
 
 ## Preparing traits ============================================================
 
@@ -191,7 +180,6 @@ fd_traits = all_traits[,c("Mass","Beak.Lengt","Beak.Width","Kipps.Index")]
 # subset species x traits matrix to original species
 fd_traits_orig = fd_traits[match(colnames(site_species_orig),
                                              rownames(fd_traits)),]
-
 
 
 
@@ -299,17 +287,9 @@ data_final$fortify_id = rownames(data_final)
 data_final = cbind(data_final, f_disp_z, cell_sr[match(data_final$grid_id,
                                                        rownames(cell_sr)),])
 
-# saving out results
-# saveRDS(data_final, file = file.path(results.dir,'Defaunation/data_final_1degree.rds'))
-# write.csv(data_final, file = file.path(results.dir,'Defaunation/data_final_1degree.csv'))
 
-# saving world_grid_vect_fill with final data
-# world_grid_vect_filled_data = world_grid_vect_filled
-# values(world_grid_vect_filled_data) = left_join(values(world_grid_vect_filled_data), data_final, by = c("grid_id"="grid_id"))
-# writeVector(x = world_grid_vect_filled_data, filename = file.path(results.dir,'grids_1degree'), filetype = "ESRI Shapefile")
 
-################################################################################
-# using cmdscale function for pcoa
+## using cmdscale function for pcoa ============================================
 pcoa = cmdscale(x.dist, k = 4, eig = T, add = T)
 
 positions = as.data.frame(pcoa$points)
@@ -319,6 +299,7 @@ colnames(positions) = c("pcoa1", "pcoa2", "pcoa3", "pcoa4")
 bird_tax = all_traits[,c("sci_name", "Family1", "Order1")]
 bird_tax = bird_tax[match(bird_tax$sci_name,rownames(positions)),]
 positions = cbind(positions, Family = bird_tax$Family1, Order = bird_tax$Order1)
+
 
 # calculating percentage variance explained by each pcoa axis
 percent_explained = (100 * pcoa$eig / sum(pcoa$eig))
@@ -354,14 +335,10 @@ pe_graph = tibble(pe = cumsum(rounded_pe),
   theme(axis.text = element_text(size=12), axis.title = element_text(size = 14))
 pe_graph
 
-# save graphs
-# ggsave(filename = "pcoa_graph_defaun.png", plot = pcoa_graph, path = figures.dir, width = 25,
-#        height = 15, units = "cm", dpi = "retina")
-# ggsave(filename = "pe_graph_defaun.png", plot = pe_graph, path = figures.dir, width = 25,
-#        height = 15, units = "cm", dpi = "retina")
-################################################################################
 
-## Comparing average traits of morphologically unique species vs average
+
+
+## Comparing average traits of morphologically unique species vs average =======
 HL_defaun_sp = colnames(site_species_HL)[!as.logical(colSums(site_species_HL))]
 WT_defaun_sp = colnames(site_species_WT)[!as.logical(colSums(site_species_WT))]
 HL_WT_defaun_sp = colnames(site_species_HL_WT)[!as.logical(colSums(site_species_HL_WT))]
@@ -371,8 +348,47 @@ fd_traits_HL = fd_traits_orig[rownames(fd_traits_orig)%in%HL_defaun_sp,]
 fd_traits_WT = fd_traits_orig[rownames(fd_traits_orig)%in%WT_defaun_sp,]
 fd_traits_HL_WT = fd_traits_orig[rownames(fd_traits_orig)%in%HL_WT_defaun_sp,]
 
+fd_traits_HL$Type = rep('HL', nrow(fd_traits_HL))
+fd_traits_WT$Type = rep('WT', nrow(fd_traits_WT))
+fd_traits_orig$Type = rep('All', nrow(fd_traits_orig))
+fd_traits_all = rbind(fd_traits_orig,fd_traits_HL,fd_traits_WT)
 
-## Morphological uniqueness ~ IUCN threat category
+
+# mass
+library(plyr)
+mu_mass = ddply(fd_traits_all, "Type", summarise, grp.mean=mean(log(Mass)))
+
+dens_mass = ggplot(fd_traits_all, aes(x = log(Mass), color = Type, fill = Type)) +
+  geom_density(alpha = 0.2) +
+  geom_vline(data = mu_mass, aes(xintercept=grp.mean, color=Type),
+           linetype="dashed")
+
+# beak length
+mu_bl = ddply(fd_traits_all, "Type", summarise, grp.mean=mean(log(Beak.Lengt)))
+
+dens_bl = ggplot(fd_traits_all, aes(x = log(Beak.Lengt), color = Type, fill = Type)) +
+  geom_density(alpha = 0.2) +
+  geom_vline(data = mu_bl, aes(xintercept=grp.mean, color=Type),
+             linetype="dashed")
+
+# beak width
+mu_bw = ddply(fd_traits_all, "Type", summarise, grp.mean=mean(log(Beak.Width)))
+
+dens_bw = ggplot(fd_traits_all, aes(x = log(Beak.Width), color = Type, fill = Type)) +
+  geom_density(alpha = 0.2) +
+  geom_vline(data = mu_bw, aes(xintercept=grp.mean, color=Type),
+             linetype="dashed")
+
+# kipp's index
+mu_kipps = ddply(fd_traits_all, "Type", summarise, grp.mean=mean(Kipps.Index))
+
+dens_kipps = ggplot(fd_traits_all, aes(x = Kipps.Index, color = Type, fill = Type)) +
+  geom_density(alpha = 0.2) +
+  geom_vline(data = mu_kipps, aes(xintercept=grp.mean, color=Type),
+             linetype="dashed")
+
+
+## Morphological uniqueness ~ IUCN threat category and HL/WT====================
 
 # creating a function that takes in the vectors of all frugivores in morphospace
 # and returns their Euclidean distance to centroid
@@ -386,11 +402,73 @@ morpho_uniq = function(vectors){
 
 all_frug_uniq = data.frame(uniq = morpho_uniq(vectors))
 IUCN_threat = all_traits$status[match(rownames(all_frug_uniq),all_traits$sci_name)]
-all_frug_uniq = cbind(all_frug_uniq, IUCN_threat)
+HL_mag = all_traits$HL[match(rownames(all_frug_uniq),all_traits$sci_name)]
+WT_mag = all_traits$WT[match(rownames(all_frug_uniq),all_traits$sci_name)]
+all_frug_uniq = cbind(all_frug_uniq, IUCN_threat, HL, WT)
+all_frug_uniq$HL_bin = ifelse(all_frug_uniq$HL > 5, TRUE, FALSE)
+all_frug_uniq$WT_bin = ifelse(all_frug_uniq$WT > 5, TRUE, FALSE)
 all_frug_uniq$IUCN_threat = factor(all_frug_uniq$IUCN_threat)
+
+HL = all_frug_uniq[all_frug_uniq$HL_bin == T,]
+WT = all_frug_uniq[all_frug_uniq$WT_bin == T,]
+
+# all_frug_uniq_melt = melt(all_frug_uniq,)
 
 ggplot(data = all_frug_uniq, aes(x=IUCN_threat, y=uniq)) +
   geom_boxplot()
 
+ggplot(data = all_frug_uniq, aes(y=uniq)) +
+  geom_boxplot()
+ggplot(data = HL, aes(y=uniq)) +
+  geom_boxplot()
+ggplot(data = WT, aes(y=uniq)) +
+  geom_boxplot()
+
 fd_traits[match(colnames(site_species_orig),
                rownames(fd_traits)),]
+
+
+
+## saving files ================================================================
+## saving world_grid_vect_filled
+# saveRDS(world_grid_vect_filled, file = file.path(data.dir,'Defaunation/world_grid_vect_filled_1degree.rds'))
+
+## saving site_species_orig
+# saveRDS(site_species_orig, file = file.path(data.dir,'Defaunation/site_species_orig_1degree.rds'))
+
+## saving all_traits
+# saveRDS(all_traits, file = file.path(data.dir,'Defaunation/all_traits_1degree.rds'))
+
+## saving mean HL/WT magnitudes per cell
+# saveRDS(mean_mag, file = file.path(data.dir,'Defaunation/mean_mag_1degree.rds'))
+
+## saving out results
+# saveRDS(data_final, file = file.path(results.dir,'Defaunation/data_final_1degree.rds'))
+# write.csv(data_final, file = file.path(results.dir,'Defaunation/data_final_1degree.csv'))
+
+## saving world_grid_vect_fill with final data
+# world_grid_vect_filled_data = world_grid_vect_filled
+# values(world_grid_vect_filled_data) = left_join(values(world_grid_vect_filled_data), data_final, by = c("grid_id"="grid_id"))
+# writeVector(x = world_grid_vect_filled_data, filename = file.path(results.dir,'grids_1degree'), filetype = "ESRI Shapefile")
+
+# # fortify grid cells and joining final data and mean_magnitudes, and saving as RDS
+# mean_mag$grid_id = as.numeric(mean_mag$grid_id)
+# grid_fortified = fortify(as(world_grid_vect_filled, "Spatial")) %>%
+#   left_join(., data_final, by = c("id"="fortify_id")) %>%
+#   left_join(.,mean_mag, by = c("grid_id"="grid_id"))
+# saveRDS(grid_fortified, file = file.path(results.dir,'Defaunation/grid_fortified.rds'))
+
+# # reading in dissolved tdwg level 1, fortify, and save as RDS
+# tdwg_l1_dissolved = vect(file.path(raw.dir, "SpatialData/TDWG/level1/level1_dissolved.shp"))
+# tdwg_l1_fortified = fortify(as(tdwg_l1_dissolved, "Spatial"))
+# saveRDS(tdwg_l1_fortified, file = file.path(data.dir,'Defaunation/tdwg_l1_fortified.rds'))
+
+## save pcoa graphs in RDS
+# saveRDS(pcoa_graph, file = file.path(results.dir,'Defaunation/pcoa_graph.rds'))
+# saveRDS(pe_graph, file = file.path(results.dir,'Defaunation/pe_graph.rds'))
+
+## save density plots for morphological traits in RDS
+# saveRDS(dens_mass, file = file.path(results.dir,'Defaunation/dens_mass.rds'))
+# saveRDS(dens_bl, file = file.path(results.dir,'Defaunation/dens_bl.rds'))
+# saveRDS(dens_bw, file = file.path(results.dir,'Defaunation/dens_bw.rds'))
+# saveRDS(dens_kipps, file = file.path(results.dir,'Defaunation/dens_kipps.rds'))
