@@ -20,6 +20,7 @@ library(letsR)
 library(terra)
 library(sf)
 
+
 ## Data preparation ============================================================
 # read Fricke's network data (without unidentified taxa)
 network = read.csv(file.path(raw.dir, "Fricke/network_long.csv"), header = T)
@@ -151,7 +152,7 @@ for (i in 1:length(network_unique_bird_list_final)){
 }
 
 
-## Seed Dispersal Reliance ======================================================
+## Seed Dispersal Reliance =====================================================
 # create bird x plant matrix for each network
 bird_plant = lapply(network_int_list_final, FUN = acast,formula = animal.id~plant.id, 
                     fill = 0, fun.aggregate = length, value.var = "plant.id") %>%
@@ -207,7 +208,7 @@ range(bird_data_final$int.uniq.norm)
 # making net.id a factor
 bird_data_final$net.id = factor(bird_data_final$net.id)
 
-# saving bird_data_final
+## saving bird_data_final
 # saveRDS(bird_data_final, file = file.path(results.dir,'Uniqueness/bird_data_final.rds'))
 # bird_data_final = readRDS(file.path(results.dir,'Uniqueness/bird_data_final.rds'))
 
@@ -219,8 +220,8 @@ plot(int.uniq.norm~dist.cent.network.norm, data = bird_data_final)
 plot(int.uniq.norm~dist.cent.global.norm, data = bird_data_final)
 
 
-### network pcoa =========================
-## random effects model ===
+
+## random effects model
 # random intercept model
 network_rand_int_model = lme(int.uniq.norm ~ 1, random = ~1|net.id, data = bird_data_final)
 summary(network_rand_int_model)
@@ -304,7 +305,7 @@ r.squaredGLMM(network_fixed_rand_slope_model)
 # test <- coefficients(network_fixed_rand_slope_model)
 # str(network_fixed_rand_slope_model)
 # 
-# ggplot() + geom_point(aes(y = int.uniq.norm, x = dist.cent.network.norm), 
+# ggplot() + geom_point(aes(y = int.uniq.norm, x = dist.cent.network.norm),
 #                       data = bird_data_final) +
 #   geom_abline(aes(intercept = 0.2187702, slope = 0.15), col = "red") +
 #   geom_abline(aes(intercept = `(Intercept)`, slope = dist.cent.network.norm),
@@ -317,14 +318,6 @@ plot(network_fixed_rand_slope_model,resid(.,scaled=TRUE)~dist.cent.network.norm|
 qqnorm(network_fixed_rand_slope_model, ~resid(., type = "n")|net.id,abline=c(0,1)) # check normality of residuals nested in each network
 qqnorm(network_fixed_rand_slope_model,~ranef(.)) # check normality of random effects
 plot(ranef(network_fixed_rand_slope_model)) # random effects
-
-# exploring random effect intercept and slope
-library(lme4)
-library(lattice)
-refit_network_fixed_rand_slope_model = lmer(int.uniq.norm~dist.cent.network.norm + 
-                                              (dist.cent.network.norm|net.id), data = bird_data_final)
-dotplot(ranef(refit_network_fixed_rand_slope_model, condVar = T))
-
 
 
 plot(int.uniq.norm~dist.cent.network.norm, data = bird_data_final)
@@ -340,50 +333,199 @@ model_sel = model.sel(network_rand_int_model,network_rand_slope_model,
                        network_fixed_rand_int_model,network_fixed_rand_slope_model, rank = "AIC")
 
 
-# model simplification
-network_fixed_rand_slope_model_REML = lme(int.uniq.norm~dist.cent.network.norm, 
-                                     random = ~1 + dist.cent.network.norm|net.id, 
-                                     method = "REML",
-                                     data = bird_data_final)
-network_fixed_rand_int_model_REML = lme(int.uniq.norm~dist.cent.network.norm, 
-                                        random = ~1|net.id, 
-                                        method = "REML",
-                                        data = bird_data_final)
-anova(network_fixed_rand_slope_model_REML,network_fixed_rand_int_model_REML)
-# maximal model has lower AIC
+
+## Extinctions following morphological uniqueness vs random ====================
+set.seed(5)
+
+# function that takes in plant-bird matrix and morph uniqueness then simulates 
+# extinctions bird-by-bird following order of morph uniqueness. returns data frame
+# of number of plants with interaction partners left after every species removed
+ext_func = function(int_mat, bird_uniq){
+  # Arguments
+  #   inter_mat: plant-bird interaction matrix from a network
+  #   bird_uniq: distance to network centroids of birds in all networks
+  
+  sim_res = list()
+  
+  for (i in 1:length(int_mat)){
+    mat = int_mat[[i]]
+    morpho_uniq = sort(bird_uniq[[i]], decreasing = T)
+    
+    orig_Bird = nrow(mat)
+    orig_Plant = ncol(mat)
+    
+    # vector to store number of plants left
+    nPlant = rep(0,orig_Bird+1)
+    nPlant[1] = orig_Plant
+    
+    # vector to store number of birds left
+    nBird = rep(0,orig_Bird+1)
+    nBird[1] = orig_Bird
+    
+    for (j in 1:(length(morpho_uniq)-1)) {
+      if (nrow(mat) == 2){
+        mat = mat[-which(rownames(mat)==names(morpho_uniq)[j]),]
+        nPlant[j+1] = sum(mat)
+        nBird[j+1] = 1
+        nPlant[j+2] = 0
+        nBird[j+2] = 0
+      }else {
+        # select the species with the highest morpho uniquenees in order and remove it
+        mat = mat[-which(rownames(mat)==names(morpho_uniq)[j]),]
+        nPlant[j+1] = sum(as.logical(colSums(mat)))
+        nBird[j+1] = nrow(mat)
+      }
+    }
+    res = data.frame(iter = seq(0,orig_Bird,1),nBird = nBird, nPlant = nPlant, 
+                     cum_nSecExt = orig_Plant - nPlant)
+    res$perc_bird_species_lost = (res$iter / max(res$nBird)) * 100
+    res$perc_cum_nSecExt = (res$cum_nSecExt / max(res$nPlant)) * 100
+    sim_res = c(sim_res, list(res))
+  }
+  names(sim_res) = names(int_mat)
+  return(sim_res)
+}
+
+sim_non_rand = ext_func(bird_plant,dist.cent.network)
+
+# function that takes in plant-bird matrix then simulates random extinctions bird-by-bird
+# returns data frame of number of plants with interaction partners left after every extinction
+ext_rand = function(int_mat,n_sim){
+  # Arguments
+  #   inter_mat: plant-bird interaction matrix from a network
+  #   n_sim: number of repetitions of random simulations
+  
+  # create 'n_sim' number of copies of plant_bird interaction matrices in a list
+  mat_rep = lapply(1:n_sim, FUN = function(x){int_mat})
+  
+  # create function to simulate extinction in each matrix copy
+  sim_res = lapply(mat_rep, FUN = function(mat){
+    orig_Bird = nrow(mat)
+    orig_Plant = ncol(mat)
+    
+    # vector to store number of plants left
+    nPlant = rep(0,orig_Bird+1)
+    nPlant[1] = orig_Plant
+    
+    # vector to store number of birds left
+    nBird = rep(0,orig_Bird+1)
+    nBird[1] = orig_Bird
+
+    for (i in 1:(orig_Bird-1)){
+      if (nrow(mat) == 2){
+        mat = mat[-(sample(1:nrow(mat),1)),]
+        nPlant[i+1] = sum(mat)
+        nBird[i+1] = 1
+        nPlant[i+2] = 0
+        nBird[i+2] = 0
+      }else {
+        # randomly select one bird species, then remove the entire row
+        mat = mat[-(sample(1:nrow(mat),1)),]
+        nPlant[i+1] = sum(as.logical(colSums(mat)))
+        nBird[i+1] = nrow(mat)
+      }
+    }
+    res = data.frame(iter = seq(0,orig_Bird,1),nBird = nBird, nPlant = nPlant, 
+                     cum_nSecExt = orig_Plant - nPlant)
+    res$perc_bird_species_lost = (res$iter / max(res$nBird)) * 100
+    res$perc_cum_nSecExt = (res$cum_nSecExt / max(res$nPlant)) * 100
+    return(res)
+  })
+  return(sim_res)
+  }
+  
+sim_rand = lapply(bird_plant, FUN = ext_rand, n_sim = 999)
+
+# # saving simulation results
+# saveRDS(sim_non_rand, file = file.path(results.dir,'Uniqueness/sim_non_rand.rds'))
+# saveRDS(sim_rand, file = file.path(results.dir,'Uniqueness/sim_rand.rds'))
+# sim_non_rand = readRDS(file.path(results.dir,'Uniqueness/sim_non_rand.rds'))
+# sim_rand = readRDS(file.path(results.dir,'Uniqueness/sim_rand.rds'))
+
+# mean of the random simulations within each network
+sim_rand_mean = lapply(sim_rand, FUN = function(x){
+  mean_perc_cum_nSecExt = lapply(x, FUN = function(y){
+    return(y$perc_cum_nSecExt)
+  }) %>%
+    do.call("cbind",.) %>%
+    rowMeans()
+  
+  mean_res = cbind(x[[1]][,1:5],mean_perc_cum_nSecExt)
+  return(mean_res)
+})
 
 
-network_fixed_rand_slope_model_ML = lme(int.uniq.norm~dist.cent.network.norm, 
-                                          random = ~1 + dist.cent.network.norm|net.id, 
-                                          method = "ML",
-                                          data = bird_data_final)
-network_rand_slope_model_ML = lme(int.uniq.norm ~ 1, 
-                                  random = ~1 + dist.cent.network.norm|net.id, 
-                                  method = "ML",
-                                  data = bird_data_final)
+library(data.table)
+sim_non_rand_unlist = rbindlist(sim_non_rand, idcol = 'network')
+sim_rand_mean_unlist = rbindlist(sim_rand_mean, idcol = 'network')
 
-anova(network_fixed_rand_slope_model_ML, network_rand_slope_model_ML)
-# maximal model has lower AIC
+ggplot()+
+  geom_line(data = sim_non_rand$`Sethi 2012`, aes(x=perc_bird_species_lost,y=perc_cum_nSecExt),colour="red")+
+  geom_line(data = sim_rand_mean$`Sethi 2012`, aes(x=perc_bird_species_lost,y=mean_perc_cum_nSecExt),colour="blue")
 
 
+ggplot() +
+  geom_line(data = sim_non_rand_unlist, aes(x=perc_bird_species_lost,y=perc_cum_nSecExt, group = network), colour = "red") +
+  geom_line(data = sim_rand_mean_unlist, aes(x=perc_bird_species_lost,y=mean_perc_cum_nSecExt, group = network), colour = "blue")
 
-# # correlation between latitude and slope
-# res_ex = bird_data_final[,c('net.id','latitude')]
-# res_ex = res_ex[!duplicated(res_ex),]
-# res_ex$intercept = as.data.frame(network_fixed_rand_slope_model_coef)[match(rownames(network_fixed_rand_slope_model_coef),res_ex$net.id),][,1]
-# res_ex$slope = as.data.frame(network_fixed_rand_slope_model_coef)[match(rownames(network_fixed_rand_slope_model_coef),res_ex$net.id),][,2]
-# lat_model = lm(slope~latitude, data = res_ex)
-# summary(lat_model)
-# 
-# nestedness = lapply(bird_plant, FUN = nested, method = 'NODF2') %>%
-#   do.call("rbind",.)
-# 
-# res_ex$nestedness = as.data.frame(nestedness)[match(rownames(nestedness),res_ex$net.id),]
-# nest_model = lm(slope~nestedness, data = res_ex)
-# summary(nest_model)
-# 
-# lat_nest_model = lm(slope~latitude*nestedness, data = res_ex)
-# summary(lat_nest_model)
+
+# loess.smooth()
+
+# minimum percentage of bird species removed such that percentage cumulative
+# secondary extinctions > 50%
+sig_lost_non_random = lapply(sim_non_rand, FUN = function(x){
+  for (i in 1:nrow(x)){
+    if (x$perc_cum_nSecEx[i] > 50){
+      sig_perc_lost = x$perc_bird_species_lost[i]
+      break
+}
+  }
+  return(sig_perc_lost)
+}) %>%
+  do.call(rbind,.)
+
+sig_lost_random = lapply(sim_rand_mean, FUN = function(x){
+  for (i in 1:nrow(x)){
+    if (x$mean_perc_cum_nSecEx[i] > 50){
+      sig_perc_lost = x$perc_bird_species_lost[i]
+      break
+    }
+  }
+  return(sig_perc_lost)
+}) %>%
+  do.call(rbind,.)
+
+sig_lost = as.data.frame(cbind(sig_lost_non_random,sig_lost_random))
+colnames(sig_lost) = c("non_random", "random")
+sig_lost$network = rownames(sig_lost)
+sig_lost_melt = reshape2::melt(sig_lost, id = 'network')
+
+ggplot(data = sig_lost_melt) +
+  geom_boxplot(aes(x = variable, y = value)) +
+  xlab("Simulation Type") +
+  ylab("Percentage Bird Defaunation to Reach 50% Cumulative Secondary Extinction")
+  
+
+## extra correlations involving slope ==========================================
+# correlation between latitude and slope
+res_ex = bird_data_final[,c('net.id','latitude')]
+res_ex = res_ex[!duplicated(res_ex),]
+res_ex$intercept = as.data.frame(network_fixed_rand_slope_model_coef)[match(rownames(network_fixed_rand_slope_model_coef),res_ex$net.id),][,1]
+res_ex$slope = as.data.frame(network_fixed_rand_slope_model_coef)[match(rownames(network_fixed_rand_slope_model_coef),res_ex$net.id),][,2]
+res_ex$ab_latitude = abs(res_ex$latitude)
+lat_model = lm(slope~ab_latitude, data = res_ex)
+summary(lat_model)
+
+nestedness = lapply(bird_plant, FUN = nested, method = 'NODF2') %>%
+  do.call("rbind",.)
+
+# including nestedness
+res_ex$nestedness = as.data.frame(nestedness)[match(rownames(nestedness),res_ex$net.id),]
+nest_model = lm(slope~nestedness, data = res_ex)
+summary(nest_model)
+
+lat_nest_model = lm(slope~latitude*nestedness, data = res_ex)
+summary(lat_nest_model)
 
 
 
@@ -411,60 +553,86 @@ all_networks_scatter
 
 
 
+## creating PCoA plots for all networks
+all_pos = fd_res_network$all.pos
+network_pcoas = list()
+for (i in 1:length(all_pos)){
+  traits = AVONET_traits
+  
+  # pcoa
+  positions = as.data.frame(all_pos[[i]])
+  colnames(positions)[1:2] = c("pcoa1", "pcoa2")
+  
+  # adding taxonomy data
+  tax = traits[,c("Species1", "Family1", "Order1")]
+  tax = tax[tax$Species1 %in% rownames(positions),]
+  tax = tax[match(rownames(positions),tax$Species1),]
+  positions = cbind(positions, Family = tax$Family1, Order = tax$Order1)
+  
+  
+  plot_title = names(fd_res_network$dist.mat)[i]
+  
+  # plot pcoa
+  positions_tibble = as_tibble(positions, rownames = "species")
+  pcoa_graph = ggplot(data = positions_tibble, aes(x = pcoa1, y = pcoa2)) +
+    geom_point(aes(color = Order)) +
+    geom_text_repel(aes(label= as.character(species))) +
+    labs(x = 'PCoA1', y = 'PCoA2', title = plot_title) +
+    theme(axis.text = element_text(size=12), 
+          axis.title = element_text(size = 14),
+          legend.title = element_text(size = 14),
+          legend.text = element_text(size = 11),
+          title = element_text(face = 'bold'),
+          plot.title = element_text(hjust = 0.5, size = 20))
+  
+  # append graphs to network_pcoas
+  network_pcoas = c(network_pcoas,list(pcoa_graph))
+  
+  print(names(fd_res_network$dist.mat)[i])
+}
+names(network_pcoas) = names(fd_res_network$all.pos)
 
 
-## PCoA global
-# using cmdscale function for pcoa
-pcoa_global = cmdscale(fd_res_global$dist.mat, k = 4, eig = T, add = T)
+## creating scatter plots for all networks
+network_fixed_rand_slope_model_coef = as.data.frame(network_fixed_rand_slope_model_coef)
+network_scatters = list()
 
-global_positions = as.data.frame(pcoa_global$points)
-colnames(global_positions) = c("pcoa1", "pcoa2", "pcoa3", "pcoa4")
+for (i in 1:nrow(network_fixed_rand_slope_model_coef)){
+  net = rownames(network_fixed_rand_slope_model_coef)[i]
+  
+  scatter_data = subset(bird_data_final, net.id == net)
+  scatter_tax = AVONET_traits[,c("Species1", "Family1", "Order1")]
+  scatter_tax = scatter_tax[scatter_tax$Species1 %in% scatter_data$animal.id,]
+  scatter_tax = scatter_tax[match(scatter_data$animal.id,scatter_tax$Species1),]
+  scatter_data = cbind(scatter_data, Family = scatter_tax$Family1, Order = scatter_tax$Order1)
+  
+  sl = network_fixed_rand_slope_model_coef[net,2]
+  int = network_fixed_rand_slope_model_coef[net,1]
+  
+  print(i)
+  print(net)
+  print(sl)
+  print(int)
+  
+  scatter = ggplot(data=scatter_data, aes(x = dist.cent.network.norm, y = int.uniq.norm)) +
+    labs(x = "Morphological Uniqueness", y = "Interaction Dependence", title = net) +
+    geom_abline(aes(slope = sl, intercept = int), color = 'red', size = 1.5, show.legend = F) +
+    geom_text_repel(aes(label= as.character(animal.id))) +
+    geom_point(aes(color = Order)) +
+    theme(axis.text = element_text(size=12), 
+          axis.title = element_text(size = 14),
+          title = element_text(face = 'bold'),
+          plot.title = element_text(hjust = 0.5, size = 20))
 
-# adding taxonomy data
-bird_tax = AVONET_traits[,c("Species1", "Family1", "Order1")]
-bird_tax = bird_tax[bird_tax$Species1 %in% rownames(global_positions),]
-bird_tax = bird_tax[match(rownames(global_positions),bird_tax$Species1),]
-global_positions = cbind(global_positions, Family = bird_tax$Family1, Order = bird_tax$Order1)
-
-# calculating percentage variance explained by each pcoa axis
-percent_explained = (100 * pcoa_global$eig / sum(pcoa_global$eig))
-rounded_pe = round(percent_explained[1:4],2)
-
-labs_global = c(glue("PCoA 1 ({rounded_pe[1]}%)"),
-                glue("PCoA 2 ({rounded_pe[2]}%)"))
-
-# plot pcoa
-global_positions_tibble = as_tibble(global_positions, rownames = "species")
-pcoa_global_graph = ggplot(data = global_positions_tibble, aes(x = pcoa1, y = pcoa2)) +
-  geom_point(aes(color = Order)) +
-  geom_text_repel(aes(label=species), data = subset(global_positions_tibble, pcoa1<(-7.5))) +
-  labs(x = labs_global[1], y = labs_global[2]) + 
-  theme(axis.text = element_text(size=12), 
-        axis.title = element_text(size = 14),
-        legend.title = element_text(size = 14),
-        legend.text = element_text(size = 11))
-pcoa_global_graph
-
-# ggsave(filename = "pcoa_global.png", plot = pcoa_global_graph, path = figures.dir, width = 25,
-#        height = 15, units = "cm", dpi = "retina")
-
-
-# scale_colour_manual(values = c('#6B6100','#1f78b4','#b2df8a','#33a02c','#fb9a99',
-#                                         '#e31a1c','#fdbf6f','#ff7f00','#007E71','#6a3d9a',
-#                                         '#FFFF37','#b15928','#2A00FF','#DE0093')) +
-#                                           labs(x = labs[1], y = labs[2]) +
+  network_scatters = c(network_scatters,list(scatter))
+}
+names(network_scatters) = rownames(network_fixed_rand_slope_model_coef)
+# for some reason, the slope of the best fit line in each graph is the same.
+# unable to resolve
 
 
-# plot percentage explained
-pe_global_graph = tibble(pe = cumsum(rounded_pe),
-                  axis = 1:length(rounded_pe)) %>%
-  ggplot(aes(x=axis,y=pe)) +
-  geom_line(size = 1) +
-  geom_point()+
-  coord_cartesian(xlim = c(1,4), ylim = c(0,100)) +
-  labs(x = "PCoA Axis", y = "Cumulative Percentage Explained") + 
-  theme(axis.text = element_text(size=12), axis.title = element_text(size = 14))
-pe_global_graph
+
+
 
 
 
@@ -713,7 +881,7 @@ network_location_map
 
 
 
-## Experimenting ===============================================================
+### Experimenting ==============================================================
 # ### global pcoa =========================
 # ## random effects model ===
 # # random intercept model
@@ -836,6 +1004,60 @@ network_location_map
 # lat_nest_model = lm(slope~latitude*nestedness, data = res_ex)
 # summary(lat_nest_model)
 # 
+
+
+# ## PCoA global
+# # using cmdscale function for pcoa
+# pcoa_global = cmdscale(fd_res_global$dist.mat, k = 4, eig = T, add = T)
+# 
+# global_positions = as.data.frame(pcoa_global$points)
+# colnames(global_positions) = c("pcoa1", "pcoa2", "pcoa3", "pcoa4")
+# 
+# # adding taxonomy data
+# bird_tax = AVONET_traits[,c("Species1", "Family1", "Order1")]
+# bird_tax = bird_tax[bird_tax$Species1 %in% rownames(global_positions),]
+# bird_tax = bird_tax[match(rownames(global_positions),bird_tax$Species1),]
+# global_positions = cbind(global_positions, Family = bird_tax$Family1, Order = bird_tax$Order1)
+# 
+# # calculating percentage variance explained by each pcoa axis
+# percent_explained = (100 * pcoa_global$eig / sum(pcoa_global$eig))
+# rounded_pe = round(percent_explained[1:4],2)
+# 
+# labs_global = c(glue("PCoA 1 ({rounded_pe[1]}%)"),
+#                 glue("PCoA 2 ({rounded_pe[2]}%)"))
+# 
+# # plot pcoa
+# global_positions_tibble = as_tibble(global_positions, rownames = "species")
+# pcoa_global_graph = ggplot(data = global_positions_tibble, aes(x = pcoa1, y = pcoa2)) +
+#   geom_point(aes(color = Order)) +
+#   geom_text_repel(aes(label=species), data = subset(global_positions_tibble, pcoa1<(-7.5))) +
+#   labs(x = labs_global[1], y = labs_global[2]) + 
+#   theme(axis.text = element_text(size=12), 
+#         axis.title = element_text(size = 14),
+#         legend.title = element_text(size = 14),
+#         legend.text = element_text(size = 11))
+# pcoa_global_graph
+
+# ggsave(filename = "pcoa_global.png", plot = pcoa_global_graph, path = figures.dir, width = 25,
+#        height = 15, units = "cm", dpi = "retina")
+
+
+# scale_colour_manual(values = c('#6B6100','#1f78b4','#b2df8a','#33a02c','#fb9a99',
+#                                         '#e31a1c','#fdbf6f','#ff7f00','#007E71','#6a3d9a',
+#                                         '#FFFF37','#b15928','#2A00FF','#DE0093')) +
+#                                           labs(x = labs[1], y = labs[2]) +
+
+
+# # plot percentage explained
+# pe_global_graph = tibble(pe = cumsum(rounded_pe),
+#                   axis = 1:length(rounded_pe)) %>%
+#   ggplot(aes(x=axis,y=pe)) +
+#   geom_line(size = 1) +
+#   geom_point()+
+#   coord_cartesian(xlim = c(1,4), ylim = c(0,100)) +
+#   labs(x = "PCoA Axis", y = "Cumulative Percentage Explained") + 
+#   theme(axis.text = element_text(size=12), axis.title = element_text(size = 14))
+# pe_global_graph
 
 ## exploring gls================================================================
 # gls_model = gls(int.uniq.norm~dist.cent.network.norm, data = bird_data_final)

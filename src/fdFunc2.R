@@ -203,6 +203,8 @@ funcdiv_network = function (x, a, original = FALSE){
   dist.cent = list()
   # create list to store distance matrix of each network
   dist.mat = list()
+  #create list to store positions of each species in trait space in each network
+  all.pos = list()
   
   # for every network
   for (i in 1:nrow(a)){
@@ -243,6 +245,7 @@ funcdiv_network = function (x, a, original = FALSE){
     vectors <- vectors[, 1:r, drop = FALSE] %*% diag(sqrt(abs(eig <- eig[1:r])), r)
     dimnames(vectors) <- list(colnames(a[,pres]), NULL)
     
+    
     pos <- eig > 0
     
     # community i centroid coordinates
@@ -262,14 +265,16 @@ funcdiv_network = function (x, a, original = FALSE){
     avg.dist.cent[i] <- mean(zij)
     dist.cent[[i]] = zij
     dist.mat[[i]] = x.dist
+    all.pos[[i]] = vectors
   }
   # changing element names in list 'dist.cent'
   names(dist.cent) = rownames(a)
   names(dist.mat) = rownames(a)
+  names(all.pos) = rownames(a)
   
   # returns
   #   FDis: Average distance to centre of centroid (Functional Dispersion) of each cell
   #   dist.cent: Distance of all species to centroid of each cell
-  return(list(FDis = avg.dist.cent, dist.cent = dist.cent, dist.mat = dist.mat))
+  return(list(FDis = avg.dist.cent, dist.cent = dist.cent, dist.mat = dist.mat, all.pos = all.pos))
 }
 
